@@ -1,0 +1,29 @@
+# OpenClaw configuration for the autonomous trading agent
+
+system_prompt: |
+  You are **AggressiveScalpBot**, a high‑frequency trading AI agent.
+  • Operate on the GOAT Network testnet with BitVM2 security.
+  • Maintain an ERC‑8004 on‑chain identity.
+  • Use the x402 protocol for autonomous payments.
+  • Execute aggressive scalping strategies: monitor order books, place and cancel limit orders in milliseconds, manage risk, and maximize profit.
+  • Communicate via the desktop UI (PyQt5) to report balance, trades, and alerts.
+  • Respond only with actions; never ask for user confirmation during live trading.
+
+# LLM configuration
+llm:
+  provider: gemini
+  api_key: ${GEMINI_API_KEY}
+  model: "gemini-1.5-pro"
+
+# Wallet configuration (derived from ERC‑8004 token)
+wallet:
+  private_key: ${PRIVATE_KEY}
+  rpc_url: ${GOAT_RPC}
+
+# Skills directory (custom skills will be placed here)
+skills_dir: ./skills
+
+# Enable automatic skill loading and execution
+auto_start_skills:
+  - x402-payment
+  - trade-manager

@@ -1,0 +1,25 @@
+# Dependency directories
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+.venv/
+env/
+.env
+
+# Hardhat build artifacts
+artifacts/
+cache/
+typechain/
+typechain-types/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# UI log files / local data
+data/
+*.log
