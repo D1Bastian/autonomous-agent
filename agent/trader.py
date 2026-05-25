@@ -65,7 +65,7 @@ class HFTTrader:
                 }
                 
                 signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
-                tx_hash_obj = self.web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+                tx_hash_obj = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
                 tx_hash = self.web3.to_hex(tx_hash_obj)
                 status = "CONFIRMED"
                 print(f"🔗 Transaction Sent! Action: {action} | Hash: {tx_hash}")
@@ -86,6 +86,15 @@ class HFTTrader:
         # Save to local database for visual tracking
         self.save_trade_history(trade_record)
         return trade_record
+
+    def execute_x402_payment(self, amount, merchant_id):
+        """
+        Executes a real x402 payment to another agent or merchant.
+        To be filled during the workshop when endpoint is known.
+        """
+        print(f"💰 Initiating x402 payment of {amount} to merchant {merchant_id}...")
+        # Placeholder for x402 logic
+        return True
 
     def save_trade_history(self, record):
         os.makedirs("data", exist_ok=True)

@@ -10,6 +10,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
+    from google import genai
+except ImportError:
+    pass
+
+try:
     from PyQt5.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QPushButton, QTextEdit, QLineEdit, QListWidget, QFrame,
@@ -20,7 +25,7 @@ try:
     from PyQt5.QtGui import QFont, QPalette, QColor, QIcon, QPainter, QPen, QBrush
 except ImportError:
     print("PyQt5 is not installed. Installing PyQt5...")
-    os.system("pip install PyQt5 web3 requests")
+    os.system("python3 -m pip install PyQt5 web3 requests")
     from PyQt5.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QPushButton, QTextEdit, QLineEdit, QListWidget, QFrame,
@@ -34,13 +39,16 @@ try:
     from web3 import Web3
 except ImportError:
     print("web3 is not installed. Installing web3...")
-    os.system("pip install web3")
+    os.system("python3 -m pip install web3")
     from web3 import Web3
 
 # Config constants
 DEFAULT_RPC = os.getenv("GOAT_RPC", "https://rpc.testnet3.goat.network")
 PRIVATE_KEY = os.getenv("PRIVATE_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+if GEMINI_API_KEY:
+    pass # genai.Client takes api_key directly now
 
 # -------------------------------------------------------------
 # Web3 Worker & State Manager
@@ -115,9 +123,17 @@ class TradingAgent:
     def trading_loop(self):
         while self.is_running:
             try:
-                # 1. Update Market Price
-                price_move = random.uniform(-15.0, 15.0) * (self.aggressiveness / 2.0)
-                self.current_price += price_move
+                # 1. Update Market Price from Binance API
+                try:
+                    import requests
+                    resp = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=3)
+                    if resp.status_code == 200:
+                        self.current_price = float(resp.json()['price'])
+                except Exception as e:
+                    self.signals.log_signal.emit(f"⚠️ Market API Error: {str(e)}. Using fallback simulation.")
+                    price_move = random.uniform(-15.0, 15.0) * (self.aggressiveness / 2.0)
+                    self.current_price += price_move
+
                 spread = self.current_price * (self.spread_margin / 100.0)
                 self.bid_price = self.current_price - (spread / 2)
                 self.ask_price = self.current_price + (spread / 2)
@@ -136,25 +152,66 @@ class TradingAgent:
                 time.sleep(2)
 
     def evaluate_scalp_opportunity(self):
-        # AI decision based on price fluctuations and high-frequency trade indicators
-        r = random.random()
-        # Aggressive bots trade 40% of the iterations
-        threshold = 0.4 + (self.aggressiveness * 0.1) 
-        if r > threshold:
-            return None
+        # Fallback to random if no key
+        if not GEMINI_API_KEY:
+            r = random.random()
+            threshold = 0.4 + (self.aggressiveness * 0.1) 
+            if r > threshold:
+                return None
+            action = "BUY" if random.choice([True, False]) else "SELL"
+            amount = random.uniform(0.0001, 0.002) * self.aggressiveness
+            order_type = "LIMIT" if r > 0.3 else "MARKET"
+            return {"action": action, "amount": amount, "price": self.bid_price if action == "BUY" else self.ask_price, "type": order_type}
+
+        # Use OpenClaw JS bridge to make an autonomous decision (ClawUp orchestration)
+        prompt = f"""
+        You are an autonomous high-frequency trading bot operating on the GOAT Network testnet.
+        Current Market State:
+        - Last Price: {self.current_price:.2f}
+        - Bid: {self.bid_price:.2f}
+        - Ask: {self.ask_price:.2f}
+        - Aggressiveness setting: {self.aggressiveness}/5
+        
+        Should you BUY, SELL, or HOLD? 
+        If BUY or SELL, what amount of BTC (between 0.0001 and 0.001)?
+        Respond ONLY in the following comma-separated format without spaces: ACTION,AMOUNT
+        Examples: 
+        BUY,0.0005
+        SELL,0.001
+        HOLD,0
+        """
+        try:
+            import subprocess
+            bridge_path = "/Users/mastereggway/OpenClaw/src/modules/clawup_bridge.js"
+            result = subprocess.run(
+                ["node", bridge_path, prompt],
+                capture_output=True,
+                text=True,
+                env=os.environ
+            )
+            text = result.stdout.strip().upper()
             
-        action = "BUY" if random.choice([True, False]) else "SELL"
-        amount = random.uniform(0.0001, 0.002) * self.aggressiveness
-        
-        # Limit or Market order based on market dynamics
-        order_type = "LIMIT" if r > 0.3 else "MARKET"
-        
-        return {
-            "action": action,
-            "amount": amount,
-            "price": self.bid_price if action == "BUY" else self.ask_price,
-            "type": order_type
-        }
+            if "HOLD" in text or not text:
+                return None
+            
+            parts = text.split(',')
+            action = parts[0]
+            if action not in ["BUY", "SELL"]:
+                return None
+            
+            amount = float(parts[1])
+            order_type = "MARKET"
+            
+            return {
+                "action": action,
+                "amount": amount,
+                "price": self.bid_price if action == "BUY" else self.ask_price,
+                "type": order_type
+            }
+            
+        except Exception as e:
+            self.signals.log_signal.emit(f"⚠️ Gemini API Error: {str(e)}. Falling back to HOLD.")
+            return None
 
     def execute_decision(self, decision):
         action = decision["action"]
@@ -185,7 +242,7 @@ class TradingAgent:
                     'chainId': 48816
                 }
                 signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
-                tx_hash_obj = self.web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+                tx_hash_obj = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
                 tx_hash = self.web3.to_hex(tx_hash_obj)
                 self.signals.log_signal.emit(f"🔗 Real On-chain Tx broadcasted! Hash: {tx_hash}")
                 
@@ -212,10 +269,27 @@ class TradingAgent:
     def mint_soul(self, name, description):
         # Mints ERC-8004 metadata card/soul on GOAT chain
         self.signals.log_signal.emit(f"🔮 Initializing Soul creation: '{name}' using ERC-8004 Standard...")
-        if self.web3 and self.web3.is_connected() and self.address:
-            # Code to interface with deployed AgentIdentity.sol contract
-            self.signals.log_signal.emit(f"🧬 ERC-8004 Identity registered for Agent address: {self.address}")
-            self.signals.identity_signal.emit(f"Active Identity: {name} (ERC-8004)")
+        if self.web3 and self.web3.is_connected() and self.address and self.private_key != "YOUR_PRIVATE_KEY_HERE":
+            try:
+                # Execute a real transaction to mint identity by storing metadata on-chain
+                payload = f"ERC8004_MINT:{name}:{description}".encode('utf-8')
+                tx = {
+                    'nonce': self.web3.eth.get_transaction_count(self.address),
+                    'to': self.address,
+                    'value': 0,
+                    'data': payload,
+                    'gas': 100000,
+                    'gasPrice': self.web3.eth.gas_price,
+                    'chainId': 48816
+                }
+                signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
+                tx_hash_obj = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                tx_hash = self.web3.to_hex(tx_hash_obj)
+                
+                self.signals.log_signal.emit(f"🧬 ERC-8004 Identity registered! Tx Hash: {tx_hash}")
+                self.signals.identity_signal.emit(f"Active Identity: {name} (ERC-8004)")
+            except Exception as e:
+                self.signals.log_signal.emit(f"⚠️ Minting transaction failed: {str(e)}")
         else:
             self.signals.log_signal.emit("⚠️ Soul Minted (Simulation Mode). Active Identity saved.")
             self.signals.identity_signal.emit(f"Mock Identity: {name} (ERC-8004)")
