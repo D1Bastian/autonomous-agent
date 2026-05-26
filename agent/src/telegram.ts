@@ -1,5 +1,6 @@
 import { Telegraf, Context } from 'telegraf';
 import { ethers } from 'ethers';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { x402Fetch } from './x402.js';
 import { Guardrails } from './guardrails.js';
 import { AgentFleetManager } from './fleet.js';
@@ -58,6 +59,12 @@ export function initTelegramBot(
     if (!token) {
         console.warn('⚠️ TELEGRAM_BOT_TOKEN not set — Telegram bot disabled.');
         return;
+    }
+
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    let genAI: GoogleGenerativeAI | null = null;
+    if (geminiApiKey && !geminiApiKey.includes('YOUR_GEMINI_API_KEY') && geminiApiKey.trim() !== '') {
+        genAI = new GoogleGenerativeAI(geminiApiKey.trim());
     }
 
     const bot = new Telegraf(token);
@@ -645,7 +652,37 @@ export function initTelegramBot(
             return;
         }
 
-        // Default fallback to identity card
+        // Default fallback to LLM or identity card
+        if (genAI) {
+            const chatStatus = await ctx.reply('🧠 Clawed is thinking...');
+            try {
+                const model = genAI.getGenerativeModel({
+                    model: 'gemini-2.0-flash',
+                    systemInstruction: `You are Clawed, an aggressive, blunt, and direct HFT trading agent on GOAT Network. Speak in an informal, direct, and confident tone. You manage wallet ${wallet?.address ?? '0x4775056BaDf8A9065b63263caEBACc7945CD8424'}. Keep replies extremely short (1-2 sentences) and blunt. Do not use emojis in your responses.`
+                });
+                
+                const result = await model.generateContent(ctx.message.text);
+                const replyText = result.response.text();
+                
+                await ctx.telegram.deleteMessage(ctx.chat.id, chatStatus.message_id);
+                return ctx.reply(replyText);
+            } catch (e: any) {
+                console.warn('Gemini LLM error:', e.message);
+                try {
+                    await ctx.telegram.deleteMessage(ctx.chat.id, chatStatus.message_id);
+                } catch (_) {}
+                
+                let errMsg = 'I couldn\'t process that request using my AI brain right now.';
+                if (e.message.includes('429') || e.message.includes('depleted') || e.message.includes('prepayment')) {
+                    errMsg = '⚠️ <b>Gemini LLM Error:</b> Your Gemini API key prepayment credits are depleted. Please check your AI Studio billing settings.';
+                } else {
+                    errMsg = `⚠️ <b>Gemini LLM Error:</b> ${e.message}`;
+                }
+                return ctx.replyWithHTML(errMsg + `\n\n<b>Fallback instructions:</b>\n\n` + IDENTITY_CARD);
+            }
+        }
+
+        // Default fallback to identity card if no Gemini
         return ctx.replyWithHTML(
             `❓ <b>Unrecognized message.</b> Here is my identity card and usage instructions:\n\n` + IDENTITY_CARD
         );
