@@ -81,8 +81,8 @@ async function main() {
     const goat    = parseFloat(ethers.formatEther(balance));
     console.log(`💰 Balance: ${goat.toFixed(6)} GOAT`);
 
-    if (goat < 0.001) {
-        console.error('❌ Insufficient balance. Fund this wallet with at least 0.001 GOAT for gas.');
+    if (goat < 0.000001) {
+        console.error('❌ Insufficient balance. Fund this wallet with at least 0.000001 GOAT for gas.');
         console.error(`   Address: ${wallet.address}`);
         process.exit(1);
     }

@@ -4,9 +4,10 @@ import dotenv from 'dotenv';
 import { OracleServer } from './oracle.js';
 import { AgentFleetManager } from './fleet.js';
 import { Guardrails } from './guardrails.js';
+import { AutoTrader } from './trader.js';
 import { initTelegramBot } from './telegram.js';
 
-dotenv.config({ path: '../.env' });
+dotenv.config({ path: '.env' });
 
 const PORT        = process.env.WS_PORT    ? parseInt(process.env.WS_PORT)    : 8080;
 const ORACLE_PORT = process.env.ORACLE_PORT ? parseInt(process.env.ORACLE_PORT) : 3000;
@@ -20,11 +21,12 @@ console.log(`🌐 RPC: ${RPC_URL}`);
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 let wallet: ethers.Wallet | null = null;
 
-if (PRIVATE_KEY && !PRIVATE_KEY.includes('YOUR_PRIVATE_KEY')) {
-    wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+const isValidKey = PRIVATE_KEY && /^(0x)?[0-9a-fA-F]{64}$/.test(PRIVATE_KEY.trim());
+if (isValidKey) {
+    wallet = new ethers.Wallet(PRIVATE_KEY!.trim(), provider);
     console.log(`💼 Agent Wallet: ${wallet.address}`);
 } else {
-    console.warn('⚠️ No private key — running in read-only mode.');
+    console.warn('⚠️ No valid private key — running in read-only mode.');
 }
 
 // Guardrails: enforce max spend per x402 transaction
@@ -50,12 +52,19 @@ console.log(`📡 WebSocket IPC on port ${PORT}`);
 
 // Oracle x402 server — serves alpha signals for 0.001 GOAT
 if (wallet) {
-    const oracle = new OracleServer(provider, wallet.address, '0.001');
+    const oracle = new OracleServer(provider, wallet.address, '0.000001');
     oracle.start(ORACLE_PORT);
 }
 
-// Telegram bot — primary user interface
-initTelegramBot(wallet, provider, fleet, guardrails, ORACLE_PORT);
+// AutoTrader — autonomous trading engine (activated via /autotrade on)
+const trader = wallet ? new AutoTrader(wallet, guardrails, ORACLE_PORT, () => {}) : null;
+
+// Telegram bot — skipped when OpenClaw owns the token (OPENCLAW_MODE=true)
+if (process.env.OPENCLAW_MODE !== 'true') {
+    initTelegramBot(wallet, provider, fleet, guardrails, ORACLE_PORT, trader);
+} else {
+    console.log('🤖 Telegram bot disabled — OpenClaw handles Telegram.');
+}
 
 // Telemetry loop — broadcasts balance to WebSocket dashboard
 async function agentLoop() {

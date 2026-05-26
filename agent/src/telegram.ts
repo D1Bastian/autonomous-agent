@@ -4,6 +4,7 @@ import { x402Fetch } from './x402.js';
 import { Guardrails } from './guardrails.js';
 import { AgentFleetManager } from './fleet.js';
 import { fetchPrices, resolveId, signalEmoji } from './market.js';
+import { AutoTrader } from './trader.js';
 
 const AGENT_NAME     = 'AggressiveScalpBot';
 const AGENT_VERSION  = '1.0.0';
@@ -44,7 +45,8 @@ export function initTelegramBot(
     provider: ethers.Provider,
     fleet: AgentFleetManager,
     guardrails: Guardrails,
-    oraclePort: number
+    oraclePort: number,
+    trader: AutoTrader | null
 ) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     if (!token) {
@@ -86,7 +88,7 @@ export function initTelegramBot(
                 `📊 Spent this session: ${spent} GOAT`,
                 ``,
                 `🌐 Network: GOAT Mainnet (Chain 2345)`,
-                `🔮 Oracle: http://localhost:${oraclePort}/api/v1/alpha-signal`,
+                `🔮 Oracle: port ${oraclePort} · 0.000001 GOAT/signal`,
             ].join('\n');
 
             return ctx.replyWithMarkdown(text);
@@ -198,7 +200,11 @@ export function initTelegramBot(
 
             await edit(finalText);
         } catch (e: any) {
-            await edit(`🚨 *Transaction Blocked*\n\n${e.message}`);
+            const reason = e.shortMessage ?? e.message ?? 'Unknown error';
+            await ctx.telegram.editMessageText(
+                msg.chat.id, msg.message_id, undefined,
+                `🚨 Transaction Blocked\n\n${reason}`
+            );
         }
     });
 
@@ -271,6 +277,127 @@ export function initTelegramBot(
         );
 
         return ctx.replyWithMarkdown(`🛡️ *Active Fleet (${agents.length} agents)*\n\n${lines.join('\n\n')}`);
+    });
+
+    // ── /autotrade ────────────────────────────────────────────────────────────
+    bot.command('autotrade', async (ctx) => {
+        if (!trader) return ctx.reply('⚠️ No wallet configured — AutoTrader unavailable.');
+
+        const arg = (ctx.message.text.split(' ')[1] ?? '').toLowerCase();
+
+        if (arg === 'on') {
+            if (trader.isRunning()) return ctx.reply('AutoTrader is already running.');
+            trader.setNotify((msg) => ctx.telegram.sendMessage(ctx.chat.id, msg));
+            trader.start(['bitcoin', 'ethereum']);
+            return ctx.replyWithMarkdown(
+                `🤖 *AutoTrader started*\n\nMonitoring BTC + ETH every 30s.\nWill open LONG on STRONG\\_BUY signal.\nStop-loss: −3% · Take-profit: +5%\n\nUse /position to track open trades.`
+            );
+        }
+
+        if (arg === 'off') {
+            trader.stop();
+            return ctx.reply('⏹ AutoTrader stopped.');
+        }
+
+        // status (no arg)
+        const positions = trader.getAllPositions();
+        const statusLines = [
+            `📊 *AutoTrader Status*`,
+            ``,
+            `State:     ${trader.isRunning() ? '🟢 Running' : '🔴 Stopped'}`,
+            `Positions: ${positions.length} open`,
+            `History:   ${trader.getHistory(100).length} trades`,
+            ``,
+            positions.length
+                ? positions.map(p => `• ${p.asset} Long @ $${p.entryPrice.toLocaleString('en-US')}`).join('\n')
+                : 'No open positions.',
+            ``,
+            trader.isRunning()
+                ? 'Use /autotrade off to stop.'
+                : 'Use /autotrade on to start.',
+        ];
+        return ctx.replyWithMarkdown(statusLines.join('\n'));
+    });
+
+    // ── /position ─────────────────────────────────────────────────────────────
+    bot.command('position', async (ctx) => {
+        if (!trader) return ctx.reply('⚠️ No wallet configured.');
+
+        const positions = trader.getAllPositions();
+        if (positions.length === 0) {
+            return ctx.reply('No open positions.\nUse /autotrade on to start the trading engine.');
+        }
+
+        const msg = await ctx.reply('📡 Fetching live prices...');
+        try {
+            const prices = await fetchPrices(positions.map(p => p.coinId));
+            const priceMap = Object.fromEntries(prices.map(p => [p.id, p.priceUsd]));
+
+            const lines = positions.map(pos => {
+                const current = priceMap[pos.coinId] ?? pos.entryPrice;
+                const pnl     = (current - pos.entryPrice) / pos.entryPrice;
+                const pnlStr  = `${pnl >= 0 ? '+' : ''}${(pnl * 100).toFixed(2)}%`;
+                const ago     = Math.floor((Date.now() - pos.entryTime.getTime()) / 60000);
+                return [
+                    `📈 *${pos.asset} Long*`,
+                    `  Entry:   $${pos.entryPrice.toLocaleString('en-US')}`,
+                    `  Current: $${current.toLocaleString('en-US')}  (${pnlStr})`,
+                    `  Stop:    $${pos.stopLoss.toLocaleString('en-US', { maximumFractionDigits: 0 })} | Target: $${pos.takeProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+                    `  Open:    ${ago}m ago`,
+                    `  Tx: \`${pos.txHash.startsWith('0x') ? pos.txHash.slice(0, 18) + '...' : pos.txHash}\``,
+                ].join('\n');
+            });
+
+            await ctx.telegram.editMessageText(
+                msg.chat.id, msg.message_id, undefined,
+                `📊 *Open Positions (${positions.length})*\n\n${lines.join('\n\n')}`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (e: any) {
+            await ctx.telegram.editMessageText(
+                msg.chat.id, msg.message_id, undefined,
+                `❌ Error: ${e.message}`
+            );
+        }
+    });
+
+    // ── /history ──────────────────────────────────────────────────────────────
+    bot.command('history', (ctx) => {
+        if (!trader) return ctx.reply('⚠️ No wallet configured.');
+
+        const records = trader.getHistory(5);
+        if (records.length === 0) {
+            return ctx.reply('No closed trades yet.\nUse /autotrade on to start trading.');
+        }
+
+        const lines = records.map((r, i) => {
+            const pnlStr = `${r.pnlPct >= 0 ? '+' : ''}${(r.pnlPct * 100).toFixed(2)}%`;
+            const icon   = r.pnlPct >= 0 ? '✅' : '🔻';
+            return [
+                `${icon} *${r.asset} Long* — ${pnlStr}`,
+                `  $${r.entryPrice.toLocaleString('en-US')} → $${r.exitPrice.toLocaleString('en-US')}`,
+                `  ${r.reason} · ${r.duration}`,
+            ].join('\n');
+        });
+
+        return ctx.replyWithMarkdown(`📜 *Trade History (last ${records.length})*\n\n${lines.join('\n\n')}`);
+    });
+
+    // ── /close ────────────────────────────────────────────────────────────────
+    bot.command('close', async (ctx) => {
+        if (!trader) return ctx.reply('⚠️ No wallet configured.');
+
+        const arg    = ctx.message.text.split(' ')[1] ?? '';
+        const coinId = resolveId(arg);
+        const pos    = trader.getPosition(coinId);
+
+        if (!pos) return ctx.reply(`No open position for "${arg}". Use /position to see open trades.`);
+
+        const prices = await fetchPrices([coinId]);
+        const current = prices[0]?.priceUsd ?? pos.entryPrice;
+        trader.closePosition(coinId, current, 'MANUAL');
+
+        return ctx.reply(`🤚 Manually closed ${pos.asset} position.`);
     });
 
     // ── fallback ──────────────────────────────────────────────────────────────
