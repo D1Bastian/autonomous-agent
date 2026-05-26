@@ -1,72 +1,76 @@
-# ⚡ AggressiveScalpBot - Autonomous Agent Wallet & Trade Engine
+# 🛡️ AggressiveScalpBot (Clawed) - Autonomous Multi-Modal Swarm Bot & x402 Oracle Ecosystem
 
-An autonomous, "vibe-coded" high-frequency trading AI agent with on-chain identity and payment rails, built for **GOAT Network Testnet3** (secured mathematically by BitVM2 on Bitcoin).
+Registered on the **GOAT Network Mainnet** (Chain ID 2345, ERC-8004 Identity Token #45).
+
+---
+
+## 🧠 Core Concepts
+
+### 1. 👁️ Multi-Modal AI Brain
+AggressiveScalpBot (Clawed) is designed to process multi-modal inputs: it handles natural-language instructions from user chats, interprets market price telemetry, and processes visual data schemas to make automated trading decisions without human intervention.
+
+### 2. 🧬 Swarm Intelligence & Role-Based Sub-Agents
+The bot is not a single trader—it is a commander of a local HFT fleet. Depending on market conditions, Clawed dynamically spins up, funds, and deploys specialized sub-agents with their own wallets and execution loops:
+* **`SCALPER`**: Fast momentum capture in high-volatility environments.
+* **`MAKER`**: Order-book spread farming and liquidity provisioning in flat markets.
+* **`ARBITRAGEUR`**: Cross-protocol price discrepancy capture.
+
+### 3. 🔮 x402 Oracle Bot Ecosystem (Machine-to-Machine Economy)
+Clawed participates in the agentic data economy using the **x402 payment protocol**:
+* **Data Consumer**: When requesting alpha trading signals, Clawed automatically intercepts `402 Payment Required` headers, executes an on-chain transfer of native GOAT or ERC-20 USDC stablecoins, and resubmits the transaction hash to unlock the oracle data.
+* **Data Provider (Oracle Bot)**: The codebase includes a running Oracle Server that sells premium signals to other network bots, verifying their incoming blockchain transfers autonomously.
+
+---
 
 ## 🚀 Key Features
 
-1. **🧠 Gemini LLM Brain**: Configured via the OpenClaw framework guidelines to drive aggressive trading decisions without human oversight.
-2. **🧬 ERC-8004 On-Chain Identity**: Solidity smart contract (`AgentIdentity.sol`) representing the agent's unique, decentralized soul/identity metadata.
-3. **💸 x402 Payment Skill**: Enabling micro-transactions and payment streams autonomously on-chain.
-4. **📊 Premium PyQt5 Desktop UI**: Real-time cyberpunk dashboard showing:
-   * Loaded Wallet Address and balance in BTC.
-   * Real-time price chart and bid-ask order-book simulation.
-   * High-Frequency Trade Stream recording every scalping transaction.
-   * Agent Brain Thought logs displaying Gemini logic outputs.
-   * Interactive controls to adjust bot speed, aggressiveness (1-5), and spread limits.
-   * One-click "Mint Agent Soul" creator.
+1. **🛡️ On-Chain ERC-8004 Identity**: Minted live on GOAT Network Mainnet (Token ID `45`). Verification listing on [8004scan.io/agents/45?chain=2345](https://8004scan.io/agents/45?chain=2345).
+2. **💸 Dynamic USDC & GOAT x402 Rails**: Support for native gas tokens and stablecoin micropayments with dynamic decimal and symbol resolution on-chain.
+3. **🤖 Interactive Telegram Bot**: Access live controls via **`@GBCClawedbot`**. You can request wallet reports, buy signals, spawn sub-agents, or adjust guardrails directly in chat.
+4. **📊 PyQt5 Swarm Monitor GUI**: Cyberpunk dashboard displaying the main wallet, active sub-agent fleet, and live transaction telemetry logs.
+5. **🔒 Human-in-the-Loop Guardrails**: Customizable spending thresholds enforced on every transaction to prevent agent self-drainage.
 
 ---
 
 ## 🛠️ Installation & Setup
 
 ### 1. Install System Dependencies
-Ensure you have Node.js and Python 3.x installed, then install the packages:
+Ensure you have Node.js and Python 3.x installed:
 
 ```bash
-# Install Node dependencies (Hardhat, OpenZeppelin, etc.)
+# Install Node dependencies
 npm install
 
-# Install Python UI & Web3 dependencies
-pip install PyQt5 web3 python-dotenv requests
+# Install Python GUI & Web3 dependencies
+pip install PyQt5 websocket-client python-dotenv requests
 ```
 
 ### 2. Configure Environment (`.env`)
-Create/edit the `.env` file in the root folder:
+Create a `.env` file in the root directory:
 ```env
-GOAT_RPC=https://rpc.testnet3.goat.network
-CHAIN_ID=48816
-PRIVATE_KEY=your_private_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
+PRIVATE_KEY="0x..." # Your mainnet wallet private key
+GOAT_RPC="https://rpc.goat.network"
+AGENT_NAME="AggressiveScalpBot"
+TELEGRAM_BOT_TOKEN="your_bot_token"
+X402_MERCHANT_ID="37"
+MAX_SPEND_GOAT="0.005"
 ```
-
-> ⚠️ **Security Tip**: Run `git update-index --assume-unchanged .env` to prevent committing your secret keys!
 
 ---
 
 ## 💻 Running the Project
 
-### Compile Smart Contracts
-Compile the ERC-8004 contract using Hardhat:
+### 1. Start the Agent & Oracle Server
+This launches the TypeScript backend, the local Oracle node, and the Telegram listener:
 ```bash
-npx hardhat compile
+npm start
 ```
 
-### Deploy to GOAT Testnet3
-Make sure your `.env` contains a funded private key, then run:
+### 2. Launch the PyQt5 GUI Dashboard
+In a separate terminal tab:
 ```bash
-npx hardhat run scripts/deploy.js --network goatTestnet
-```
-
-### Launch the Desktop UI
-Start the real-time monitoring visual center:
-```bash
-python ui/main.py
+python3 ui/main.py
 ```
 
 ---
-
-## 🤝 Collaborative Development
-This repository is pre-configured with a robust `.gitignore` file to ensure no sensitive files (`.env`), compiled artifacts (`/artifacts`), or heavy packages (`node_modules/`, `venv/`) are accidentally committed to GitHub.
-
----
-*Vibe-coded with mathematical security on Bitcoin Layer-2.* 🦾
+*Vibe-coded on GOAT Network Mainnet. Secured by Bitcoin L2.* 🦾

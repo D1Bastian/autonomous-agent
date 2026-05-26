@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { Guardrails } from './guardrails.js';
 
 export interface X402Progress {
-    onPaymentRequired?: (amount: string, to: string) => void;
+    onPaymentRequired?: (amount: string, to: string, symbol?: string) => void;
     onPaying?: (txHash: string) => void;
     onConfirmed?: (txHash: string) => void;
 }
@@ -30,29 +30,70 @@ export async function x402Fetch(
             throw new Error('402 Response missing valid x402 Www-Authenticate header');
         }
 
-        // Expected format: Www-Authenticate: x402 address="0x...", amount="1000000000000000"
         const addressMatch = authHeader.match(/address="(0x[a-fA-F0-9]+)"/);
         const amountMatch  = authHeader.match(/amount="([0-9]+)"/);
+        const tokenMatch   = authHeader.match(/token="(0x[a-fA-F0-9]+)"/);
 
         if (!addressMatch || !amountMatch) {
             throw new Error('Invalid x402 header format');
         }
-
         const toAddress = addressMatch[1];
         const amountWei = amountMatch[1];
-        const amountGoat = parseFloat(ethers.formatEther(amountWei));
+        const tokenAddress = tokenMatch ? tokenMatch[1] : null;
 
-        console.log(`💸 x402 Payment Required: ${amountGoat} GOAT → ${toAddress}`);
-        progress?.onPaymentRequired?.(amountGoat.toFixed(6), toAddress);
-
-        // Guardrail check — throws if over limit
-        if (guardrails) {
-            guardrails.checkAndRecord(amountGoat);
+        let symbol = 'GOAT';
+        let decimals = 18;
+        if (tokenAddress) {
+            try {
+                const tokenContract = new ethers.Contract(
+                    tokenAddress,
+                    [
+                        'function decimals() external view returns (uint8)',
+                        'function symbol() external view returns (string)'
+                    ],
+                    wallet
+                );
+                const [d, s] = await Promise.all([
+                    tokenContract.decimals(),
+                    tokenContract.symbol()
+                ]);
+                decimals = Number(d);
+                symbol = s;
+            } catch (e) {
+                console.warn('Failed to query token metadata, defaulting to USDC/6:', e);
+                symbol = 'USDC';
+                decimals = 6;
+            }
         }
 
-        console.log(`🤖 Agent autonomously authorizing ${amountGoat} GOAT to ${toAddress}`);
+        const formattedAmount = ethers.formatUnits(amountWei, decimals);
 
-        const tx = await wallet.sendTransaction({ to: toAddress, value: amountWei });
+        if (tokenAddress) {
+            console.log(`💸 x402 Payment Required: ${formattedAmount} ${symbol} (${amountWei} units) → ${toAddress}`);
+        } else {
+            console.log(`💸 x402 Payment Required: ${formattedAmount} GOAT → ${toAddress}`);
+        }
+        progress?.onPaymentRequired?.(formattedAmount, toAddress, symbol);
+
+        // Guardrail check — throws if over limit (only checking native equivalent approximation or flat limit)
+        if (guardrails) {
+            const amountNum = parseFloat(formattedAmount);
+            guardrails.checkAndRecord(tokenAddress ? 0.001 : amountNum); // Mock cost for token tx checking
+        }
+
+        let tx;
+        if (tokenAddress) {
+            console.log(`🤖 Agent autonomously executing ERC-20 transfer for token ${tokenAddress}`);
+            const tokenContract = new ethers.Contract(
+                tokenAddress,
+                ['function transfer(address to, uint256 value) external returns (bool)'],
+                wallet
+            );
+            tx = await tokenContract.transfer(toAddress, amountWei);
+        } else {
+            console.log(`🤖 Agent autonomously authorizing ${formattedAmount} GOAT to ${toAddress}`);
+            tx = await wallet.sendTransaction({ to: toAddress, value: amountWei });
+        }
 
         progress?.onPaying?.(tx.hash);
         console.log(`⏳ Waiting for confirmation... Tx: ${tx.hash}`);

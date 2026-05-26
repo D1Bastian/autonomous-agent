@@ -70,6 +70,67 @@ export class OracleServer {
                 res.writeHead(401, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: "Invalid payment", details: e.message }));
             }
+        } else if (req.url === '/api/v1/usdc-signal' && req.method === 'GET') {
+            const authHeader = req.headers['authorization'];
+            const USDC_CONTRACT = '0x3022b87ac063DE95b1570F46f5e470F8B53112D8'; // USDC on GOAT Mainnet
+            
+            if (!authHeader || !authHeader.startsWith('x402 ')) {
+                res.writeHead(402, { 
+                    'Content-Type': 'application/json',
+                    'Www-Authenticate': `x402 address="${this.oracleWalletAddress}", amount="1000000", token="${USDC_CONTRACT}"` 
+                });
+                res.end(JSON.stringify({ 
+                    error: "Payment Required.", 
+                    message: "Please pay 1.0 USDC via x402 and submit the transaction hash via the Authorization header."
+                }));
+                return;
+            }
+
+            const txHash = authHeader.split(' ')[1];
+            
+            try {
+                console.log(`🔮 Oracle: Verifying incoming USDC payment tx: ${txHash}`);
+                const tx = await this.provider.getTransaction(txHash);
+                
+                if (!tx) throw new Error("Transaction not found on GOAT network.");
+                
+                // Decode ERC-20 transfer
+                const erc20Interface = new ethers.Interface(['function transfer(address to, uint256 value)']);
+                const parsedTx = erc20Interface.parseTransaction({ data: tx.data });
+                
+                if (!parsedTx) throw new Error("Invalid transaction data for ERC-20 transfer.");
+                
+                const recipient = parsedTx.args[0];
+                const value = parsedTx.args[1];
+                
+                if (tx.to?.toLowerCase() !== USDC_CONTRACT.toLowerCase()) {
+                    throw new Error("Transaction is not directed to the USDC contract.");
+                }
+                if (recipient.toLowerCase() !== this.oracleWalletAddress.toLowerCase()) {
+                    throw new Error("USDC recipient does not match the Oracle wallet.");
+                }
+                if (value < 1000000n) { // 1 USDC (6 decimals)
+                    throw new Error(`Insufficient payment. Expected at least 1.0 USDC (1000000 units), got ${value.toString()}`);
+                }
+                
+                const premiumData = {
+                    asset: "USDC-Unlocked-Signal",
+                    signal: "USDC_SIGNAL_VERIFIED",
+                    confidence: 0.99,
+                    target: 100.00,
+                    timestamp: new Date().toISOString(),
+                    paidVia: txHash
+                };
+                
+                console.log(`🔮 Oracle: USDC Payment verified. Delivering premium signal.`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(premiumData));
+
+            } catch (e: any) {
+                console.error(`🔮 Oracle USDC Verification Error: ${e.message}`);
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: "Invalid payment", details: e.message }));
+            }
         } else {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: "Endpoint Not Found" }));

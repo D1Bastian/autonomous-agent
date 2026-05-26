@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "npx tsx /Users/arman/Desktop/Clawhack/autonomous-agent/agent/src/index.ts",
+    "start": "npx tsx agent/src/index.ts",
     "register": "node scripts/register-erc8004.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
