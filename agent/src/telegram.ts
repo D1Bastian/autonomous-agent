@@ -9,6 +9,13 @@ const AGENT_NAME     = 'AggressiveScalpBot';
 const AGENT_VERSION  = '1.0.0';
 const GOAT_EXPLORER  = 'https://explorer.goat.network/tx';
 
+const pendingConfirmations = new Map<number, {
+    resolve: (value: boolean) => void;
+    amount: string;
+    to: string;
+    symbol: string;
+}>();
+
 function fmt(text: string): string {
     return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
 }
@@ -161,6 +168,25 @@ export function initTelegramBot(
                         steps.push(`📬 Recipient: \`${to}\``);
                         await edit(steps.join('\n'));
                     },
+                    onRequestConfirmation: async (amount, to, sym) => {
+                        const currency = sym || 'GOAT';
+                        steps.push(``);
+                        steps.push(`⚠️ *Human-in-the-Loop Guardrail Triggered*`);
+                        steps.push(`The agent requests authorization to pay *${amount} ${currency}* to recipient:`);
+                        steps.push(`\`${to}\``);
+                        steps.push(``);
+                        steps.push(`Please reply exactly *CONFIRM PAYMENT* to execute this transaction, or *ABORT* to cancel.`);
+                        await edit(steps.join('\n'));
+                        
+                        return new Promise<boolean>((resolve) => {
+                            pendingConfirmations.set(ctx.chat.id, {
+                                resolve,
+                                amount,
+                                to,
+                                symbol: currency
+                            });
+                        });
+                    },
                     onPaying: async (txHash) => {
                         steps.push(`🤖 Agent paying on-chain...`);
                         steps.push(`🔗 Tx: \`${txHash}\``);
@@ -233,6 +259,25 @@ export function initTelegramBot(
                         steps.push(`💸 Oracle demands *${amount} ${currency}* via x402`);
                         steps.push(`📬 Recipient: \`${to}\``);
                         await edit(steps.join('\n'));
+                    },
+                    onRequestConfirmation: async (amount, to, sym) => {
+                        const currency = sym || 'USDC';
+                        steps.push(``);
+                        steps.push(`⚠️ *Human-in-the-Loop Guardrail Triggered*`);
+                        steps.push(`The agent requests authorization to pay *${amount} ${currency}* to recipient:`);
+                        steps.push(`\`${to}\``);
+                        steps.push(``);
+                        steps.push(`Please reply exactly *CONFIRM PAYMENT* to execute this transaction, or *ABORT* to cancel.`);
+                        await edit(steps.join('\n'));
+                        
+                        return new Promise<boolean>((resolve) => {
+                            pendingConfirmations.set(ctx.chat.id, {
+                                resolve,
+                                amount,
+                                to,
+                                symbol: currency
+                            });
+                        });
                     },
                     onPaying: async (txHash) => {
                         steps.push(`🤖 Agent paying on-chain...`);
@@ -351,6 +396,24 @@ export function initTelegramBot(
     // ── fallback ──────────────────────────────────────────────────────────────
     bot.on('text', async (ctx) => {
         const text = ctx.message.text.toLowerCase();
+
+        // Check for pending human confirmation (HITL Guardrail)
+        if (pendingConfirmations.has(ctx.chat.id)) {
+            const pending = pendingConfirmations.get(ctx.chat.id)!;
+            if (text === 'confirm payment') {
+                ctx.reply('✅ Payment authorized by user. Sending transaction to blockchain...');
+                pending.resolve(true);
+                pendingConfirmations.delete(ctx.chat.id);
+                return;
+            } else if (text === 'abort' || text === 'cancel') {
+                ctx.reply('❌ Transaction aborted by user.');
+                pending.resolve(false);
+                pendingConfirmations.delete(ctx.chat.id);
+                return;
+            } else {
+                return ctx.reply('⚠️ Please reply exactly "CONFIRM PAYMENT" to proceed, or "ABORT" to cancel.');
+            }
+        }
         
         // 1. Create a skill
         if (text.includes('create a skill') || text.includes('skill_creator') || text.includes('create a reusable openclaw skill')) {
@@ -465,6 +528,25 @@ export function initTelegramBot(
                             steps.push(`💸 Oracle demands *${amount} ${currency}* via x402`);
                             steps.push(`📬 Recipient: \`${to}\``);
                             await edit(steps.join('\n'));
+                        },
+                        onRequestConfirmation: async (amount, to, sym) => {
+                            const currency = sym || 'USDC';
+                            steps.push(``);
+                            steps.push(`⚠️ *Human-in-the-Loop Guardrail Triggered*`);
+                            steps.push(`The agent requests authorization to pay *${amount} ${currency}* to recipient:`);
+                            steps.push(`\`${to}\``);
+                            steps.push(``);
+                            steps.push(`Please reply exactly *CONFIRM PAYMENT* to execute this transaction, or *ABORT* to cancel.`);
+                            await edit(steps.join('\n'));
+                            
+                            return new Promise<boolean>((resolve) => {
+                                pendingConfirmations.set(ctx.chat.id, {
+                                    resolve,
+                                    amount,
+                                    to,
+                                    symbol: currency
+                                });
+                            });
                         },
                         onPaying: async (txHash) => {
                             steps.push(`🤖 Agent paying on-chain...`);

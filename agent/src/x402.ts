@@ -3,6 +3,7 @@ import { Guardrails } from './guardrails.js';
 
 export interface X402Progress {
     onPaymentRequired?: (amount: string, to: string, symbol?: string) => void;
+    onRequestConfirmation?: (amount: string, to: string, symbol?: string) => Promise<boolean>;
     onPaying?: (txHash: string) => void;
     onConfirmed?: (txHash: string) => void;
 }
@@ -79,6 +80,13 @@ export async function x402Fetch(
         if (guardrails) {
             const amountNum = parseFloat(formattedAmount);
             guardrails.checkAndRecord(tokenAddress ? 0.001 : amountNum); // Mock cost for token tx checking
+        }
+
+        if (progress?.onRequestConfirmation) {
+            const confirmed = await progress.onRequestConfirmation(formattedAmount, toAddress, symbol);
+            if (!confirmed) {
+                throw new Error("Payment authorization rejected by user.");
+            }
         }
 
         let tx;
