@@ -16,14 +16,33 @@ export interface X402Progress {
  */
 export async function x402Fetch(
     url: string,
-    options: RequestInit,
+    options: RequestInit = {},
     wallet: ethers.Wallet,
     guardrails?: Guardrails,
-    progress?: X402Progress
+    progress?: X402Progress,
+    timeoutMs: number = 10000
 ): Promise<Response> {
 
     console.log(`🌐 Fetching ${url}...`);
-    let response = await fetch(url, options);
+    
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const fetchOptions = {
+        ...options,
+        signal: controller.signal
+    };
+
+    let response: Response;
+    try {
+        response = await fetch(url, fetchOptions);
+    } catch (e: any) {
+        if (e.name === 'AbortError') {
+            throw new Error(`Connection to oracle timed out after ${timeoutMs / 1000} seconds. The network might be congested or the oracle is offline.`);
+        }
+        throw new Error(`Network connection error: ${e.message}. Please check if the oracle server is running.`);
+    } finally {
+        clearTimeout(timer);
+    }
 
     if (response.status === 402) {
         const authHeader = response.headers.get('Www-Authenticate');
@@ -105,20 +124,36 @@ export async function x402Fetch(
 
         progress?.onPaying?.(tx.hash);
         console.log(`⏳ Waiting for confirmation... Tx: ${tx.hash}`);
-        await tx.wait();
+        try {
+            await tx.wait(1, 30000); // 30s timeout for transaction confirmation
+        } catch (e: any) {
+            throw new Error(`Transaction submitted but timed out waiting for confirmation: ${tx.hash}`);
+        }
         console.log(`✅ x402 Payment Confirmed! Tx Hash: ${tx.hash}`);
         progress?.onConfirmed?.(tx.hash);
 
+        const retryController = new AbortController();
+        const retryTimer = setTimeout(() => retryController.abort(), timeoutMs);
         const retryOptions = {
             ...options,
             headers: {
                 ...((options.headers as Record<string, string>) ?? {}),
                 'Authorization': `x402 ${tx.hash}`,
             },
+            signal: retryController.signal
         };
 
         console.log(`🔄 Retrying request with proof of payment...`);
-        response = await fetch(url, retryOptions);
+        try {
+            response = await fetch(url, retryOptions);
+        } catch (e: any) {
+            if (e.name === 'AbortError') {
+                throw new Error(`Retry connection to oracle timed out after ${timeoutMs / 1000} seconds.`);
+            }
+            throw new Error(`Network connection error during retry: ${e.message}`);
+        } finally {
+            clearTimeout(retryTimer);
+        }
     }
 
     return response;

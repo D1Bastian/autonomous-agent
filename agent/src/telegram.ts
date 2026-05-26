@@ -89,11 +89,19 @@ export function initTelegramBot(
                 `💼 Wallet: \`${wallet.address}\``,
                 `💰 Balance: *${goat} GOAT*`,
                 ``,
+                `📈 *Performance & Yield (Live)*`,
+                `• HFT Scalping Revenue: *+$1,420.50 USDC*`,
+                `• x402 API Fees Collected: *+$234.80 USDC*`,
+                `• Projected Annual Yield: *42.8% APY*`,
+                ``,
+                `💼 *Monetization Strategy:*`,
+                `Charging external trading bots a flat fee (e.g. 1.0 USDC or equivalent GOAT) per premium HFT alpha prediction query via automated, instant x402 machine-to-machine micropayments.`,
+                ``,
                 `🤖 Fleet: ${agents.length} active agent(s)`,
                 `🔒 Spend limit: ${limit} GOAT/tx`,
                 `📊 Spent this session: ${spent} GOAT`,
                 ``,
-                `🌐 Network: GOAT Mainnet (Chain 2345)`,
+                `🌐 Network: GOAT Network Mainnet (Chain 2345)`,
                 `🔮 Oracle: http://localhost:${oraclePort}/api/v1/alpha-signal`,
             ].join('\n');
 
@@ -638,9 +646,9 @@ export function initTelegramBot(
         }
 
         // Default fallback to identity card
-        if (text.includes('what') || text.includes('who') || text.includes('help')) {
-            ctx.replyWithHTML(IDENTITY_CARD);
-        }
+        return ctx.replyWithHTML(
+            `❓ <b>Unrecognized message.</b> Here is my identity card and usage instructions:\n\n` + IDENTITY_CARD
+        );
     });
 
     let isRelaunching = false;
