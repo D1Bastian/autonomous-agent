@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "npx tsx /Users/arman/Desktop/Clawhack/autonomous-agent/agent/src/index.ts",
+    "register": "node scripts/register-erc8004.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -15,6 +17,7 @@
     "@nomiclabs/hardhat-ethers": "^2.2.3",
     "@openzeppelin/contracts": "^4.9.3",
     "ethers": "^6.16.0",
+    "telegraf": "^4.16.3",
     "ws": "^8.21.0"
   },
   "devDependencies": {

@@ -1,94 +1,83 @@
 import { WebSocketServer } from 'ws';
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
-import { x402Fetch } from './x402';
-import { OracleServer } from './oracle';
+import { OracleServer } from './oracle.js';
+import { AgentFleetManager } from './fleet.js';
+import { Guardrails } from './guardrails.js';
+import { initTelegramBot } from './telegram.js';
 
-dotenv.config({ path: '../.env' }); // Load from root
+dotenv.config({ path: '../.env' });
 
-const PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT) : 8080;
+const PORT        = process.env.WS_PORT    ? parseInt(process.env.WS_PORT)    : 8080;
 const ORACLE_PORT = process.env.ORACLE_PORT ? parseInt(process.env.ORACLE_PORT) : 3000;
-const RPC_URL = process.env.GOAT_RPC || 'https://rpc.testnet3.goat.network';
+const RPC_URL     = process.env.GOAT_RPC   || 'https://rpc.goat.network';
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const MAX_SPEND   = parseFloat(process.env.MAX_SPEND_GOAT ?? '0.005');
 
-console.log('🛡️ Aegis/OpenClaw Agent Core initializing...');
+console.log('🛡️ AggressiveScalpBot initializing on GOAT Mainnet...');
+console.log(`🌐 RPC: ${RPC_URL}`);
 
-// Initialize Provider & Wallet
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 let wallet: ethers.Wallet | null = null;
 
 if (PRIVATE_KEY && !PRIVATE_KEY.includes('YOUR_PRIVATE_KEY')) {
     wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    console.log(`💼 Agent Wallet Loaded: ${wallet.address}`);
+    console.log(`💼 Agent Wallet: ${wallet.address}`);
 } else {
-    console.warn('⚠️ No private key found. Running in offline/read-only mode.');
+    console.warn('⚠️ No private key — running in read-only mode.');
 }
 
-// Initialize WebSocket Server for UI IPC
+// Guardrails: enforce max spend per x402 transaction
+const guardrails = new Guardrails(MAX_SPEND);
+console.log(`🔒 Spending limit: ${MAX_SPEND} GOAT/tx`);
+
+// Fleet manager for sub-agents
+const fleet = new AgentFleetManager(RPC_URL);
+
+// WebSocket server for PyQt5 dashboard (kept for visual demo)
 const wss = new WebSocketServer({ port: PORT });
 
 wss.on('connection', (ws) => {
-  console.log('🟢 Dashboard UI connected via WebSocket.');
-  
-  ws.send(JSON.stringify({ 
-      type: 'status', 
-      data: 'Agent connected to OpenClaw framework.',
-      wallet: wallet ? wallet.address : 'Offline'
-  }));
-
-  ws.on('message', async (message) => {
-    const data = JSON.parse(message.toString());
-    console.log(`Received command =>`, data);
-    
-    if (data.command === 'test_x402' && wallet) {
-        // This is a placeholder for a true x402-gated API endpoint.
-        // In a real scenario, this would be an API that charges per request.
-        ws.send(JSON.stringify({ type: 'log', message: 'Initiating x402 simulated fetch...' }));
-        
-        try {
-            // Simulated x402 target (using a public endpoint just for compilation, 
-            // though it won't actually return a 402 in this demo)
-            const res = await x402Fetch('https://api.coindesk.com/v1/bpi/currentprice.json', {}, wallet);
-            ws.send(JSON.stringify({ type: 'log', message: `Fetch complete. Status: ${res.status}` }));
-        } catch (e: any) {
-            ws.send(JSON.stringify({ type: 'error', message: e.message }));
-        }
-    }
-  });
+    console.log('🟢 Dashboard UI connected.');
+    ws.send(JSON.stringify({
+        type:   'status',
+        data:   'AggressiveScalpBot connected to GOAT Mainnet.',
+        wallet: wallet?.address ?? 'Offline',
+    }));
 });
 
-console.log(`📡 WebSocket IPC server running on port ${PORT}`);
+console.log(`📡 WebSocket IPC on port ${PORT}`);
 
-// Initialize the Oracle Server
+// Oracle x402 server — serves alpha signals for 0.001 GOAT
 if (wallet) {
-    // We charge 0.001 GOAT per API request
-    const oracle = new OracleServer(provider, wallet.address, "0.001");
+    const oracle = new OracleServer(provider, wallet.address, '0.001');
     oracle.start(ORACLE_PORT);
 }
 
-// --- Agent Brain Loop (OpenClaw Framework Concept) ---
+// Telegram bot — primary user interface
+initTelegramBot(wallet, provider, fleet, guardrails, ORACLE_PORT);
+
+// Telemetry loop — broadcasts balance to WebSocket dashboard
 async function agentLoop() {
     while (true) {
         if (wallet) {
             try {
                 const balance = await provider.getBalance(wallet.address);
-                const ethBalance = ethers.formatEther(balance);
-                
-                // Broadcast to UI
+                const goat    = ethers.formatEther(balance);
                 wss.clients.forEach(client => {
-                    if (client.readyState === 1) { // OPEN
+                    if (client.readyState === 1) {
                         client.send(JSON.stringify({
-                            type: 'telemetry',
-                            balance: ethBalance,
-                            timestamp: new Date().toISOString()
+                            type:      'telemetry',
+                            balance:   goat,
+                            timestamp: new Date().toISOString(),
                         }));
                     }
                 });
-            } catch (e) {
-                console.error('Telemetry error:', e);
+            } catch {
+                // RPC hiccup — skip this tick
             }
         }
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 5000));
     }
 }
 

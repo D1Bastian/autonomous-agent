@@ -14,7 +14,12 @@ export default {
   solidity: "0.8.20",
   networks: {
     goatTestnet: {
-      url: process.env.GOAT_RPC || "https://rpc.testnet3.goat.network",
+      url: "https://rpc.testnet3.goat.network",
+      accounts: getAccounts()
+    },
+    goatMainnet: {
+      url: process.env.GOAT_RPC || "https://rpc.goat.network",
+      chainId: 2345,
       accounts: getAccounts()
     }
   }
